@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HLS Player - Hỗ trợ M3U8 & Manifest JSON</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0a0a0f;
+            color: #e0e0e0;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* Animated background */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: 
+                radial-gradient(ellipse at 20% 50%, rgba(120, 40, 200, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, rgba(255, 50, 80, 0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 80%, rgba(0, 150, 255, 0.05) 0%, transparent 50%);
+            z-index: -1;
+            animation: bgShift 20s ease-in-out infinite alternate;
+        }
+
+        @keyframes bgShift {
+            0% { opacity: 0.6; }
+            100% { opacity: 1; }
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 24px 20px;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #a78bfa, #f472b6, #fb923c);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            font-size: 14px;
+            color: #777;
+        }
+
+        /* Player wrapper */
+        .player-wrapper {
+            position: relative;
+            width: 100%;
+            background: #000;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255,255,255,0.05);
+            margin-bottom: 28px;
+        }
+
+        .player-wrapper::before {
+            content: '';
+            display: block;
+            padding-top: 56.25%; /* 16:9 */
+        }
+
+        #video-player {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            outline: none;
+        }
+
+        .player-placeholder {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(145deg, #111118, #0d0d14);
+            gap: 16px;
+            transition: opacity 0.4s ease;
+        }
+
+        .player-placeholder.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .player-placeholder .icon {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, rgba(167, 139, 250, 0.15), rgba(244, 114, 182, 0.15));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(167, 139, 250, 0.2);
+        }
+
+        .player-placeholder .icon svg {
+            width: 32px;
+            height: 32px;
+            fill: #a78bfa;
+        }
+
+        .player-placeholder span {
+            font-size: 15px;
+            color: #666;
+        }
+
+        /* Controls panel */
+        .controls-panel {
+            background: rgba(17, 17, 24, 0.85);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+
+        .controls-panel h2 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #c4b5fd;
+        }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 20px;
+            background: rgba(255,255,255,0.04);
+            border-radius: 10px;
+            padding: 4px;
+        }
+
+        .tab-btn {
+            flex: 1;
+            padding: 10px 16px;
+            border: none;
+            background: transparent;
+            color: #888;
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            font-weight: 500;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.25s ease;
+        }
+
+        .tab-btn:hover {
+            color: #bbb;
+        }
+
+        .tab-btn.active {
+            background: linear-gradient(135deg, rgba(167, 139, 250, 0.2), rgba(244, 114, 182, 0.15));
+            color: #e0d4ff;
+            box-shadow: 0 2px 8px rgba(167, 139, 250, 0.15);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Input group */
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .input-group input,
+        .input-group textarea {
+            flex: 1;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            color: #e0e0e0;
+            font-family: 'Inter', monospace;
+            font-size: 13px;
+            outline: none;
+            transition: border-color 0.25s ease, box-shadow 0.25s ease;
+        }
+
+        .input-group input:focus,
+        .input-group textarea:focus {
+            border-color: rgba(167, 139, 250, 0.4);
+            box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.08);
+        }
+
+        .input-group input::placeholder,
+        .input-group textarea::placeholder {
+            color: #555;
+        }
+
+        .input-group textarea {
+            min-height: 160px;
+            resize: vertical;
+            font-size: 11px;
+            line-height: 1.5;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 10px;
+            font-family: 'Inter', sans-serif;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.25s ease;
+            white-space: nowrap;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #7c3aed, #a855f7);
+            color: white;
+            box-shadow: 0 4px 15px rgba(124, 58, 237, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(124, 58, 237, 0.4);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.06);
+            color: #aaa;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #ddd;
+        }
+
+        .hint {
+            font-size: 12px;
+            color: #555;
+            margin-top: 8px;
+            line-height: 1.6;
+        }
+
+        .hint code {
+            background: rgba(167, 139, 250, 0.1);
+            color: #c4b5fd;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+
+        /* Status bar */
+        .status-bar {
+            background: rgba(17, 17, 24, 0.85);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 24px;
+        }
+
+        .status-bar h3 {
+            font-size: 13px;
+            font-weight: 600;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+        }
+
+        .status-items {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #333;
+            flex-shrink: 0;
+        }
+
+        .status-dot.active {
+            background: #22c55e;
+            box-shadow: 0 0 6px rgba(34, 197, 94, 0.4);
+        }
+
+        .status-dot.error {
+            background: #ef4444;
+            box-shadow: 0 0 6px rgba(239, 68, 68, 0.4);
+        }
+
+        .status-dot.loading {
+            background: #f59e0b;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.4; }
+            50% { opacity: 1; }
+        }
+
+        .status-label {
+            font-size: 12px;
+            color: #888;
+        }
+
+        .status-value {
+            font-size: 12px;
+            color: #ccc;
+            font-weight: 500;
+        }
+
+        /* Log area */
+        .log-panel {
+            background: rgba(17, 17, 24, 0.85);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .log-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        .log-header h3 {
+            font-size: 13px;
+            font-weight: 600;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        #log-output {
+            padding: 16px 20px;
+            max-height: 240px;
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 11px;
+            line-height: 1.8;
+        }
+
+        #log-output::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        #log-output::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        #log-output::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.1);
+            border-radius: 4px;
+        }
+
+        .log-line {
+            color: #666;
+        }
+
+        .log-line .time {
+            color: #555;
+        }
+
+        .log-line.info { color: #60a5fa; }
+        .log-line.success { color: #4ade80; }
+        .log-line.warn { color: #fbbf24; }
+        .log-line.error { color: #f87171; }
+
+        /* Example buttons */
+        .examples {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+
+        .example-btn {
+            padding: 6px 14px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 8px;
+            color: #888;
+            font-size: 11px;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .example-btn:hover {
+            background: rgba(167, 139, 250, 0.1);
+            color: #c4b5fd;
+            border-color: rgba(167, 139, 250, 0.2);
+        }
+
+        /* CORS Proxy section */
+        .proxy-section {
+            background: rgba(255, 165, 0, 0.05);
+            border: 1px solid rgba(255, 165, 0, 0.15);
+            border-radius: 12px;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+        }
+
+        .proxy-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .proxy-header h3 {
+            font-size: 13px;
+            font-weight: 600;
+            color: #f59e0b;
+        }
+
+        .proxy-toggle {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            cursor: pointer;
+        }
+
+        .proxy-toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .proxy-slider {
+            position: absolute;
+            inset: 0;
+            background: rgba(255,255,255,0.1);
+            border-radius: 24px;
+            transition: 0.3s;
+        }
+
+        .proxy-slider::before {
+            content: '';
+            position: absolute;
+            width: 18px;
+            height: 18px;
+            left: 3px;
+            bottom: 3px;
+            background: #666;
+            border-radius: 50%;
+            transition: 0.3s;
+        }
+
+        .proxy-toggle input:checked + .proxy-slider {
+            background: rgba(245, 158, 11, 0.3);
+        }
+
+        .proxy-toggle input:checked + .proxy-slider::before {
+            transform: translateX(20px);
+            background: #f59e0b;
+        }
+
+        .proxy-input-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .proxy-input-row input {
+            flex: 1;
+            padding: 10px 14px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 165, 0, 0.15);
+            border-radius: 8px;
+            color: #e0e0e0;
+            font-family: 'Inter', monospace;
+            font-size: 12px;
+            outline: none;
+            transition: border-color 0.25s;
+        }
+
+        .proxy-input-row input:focus {
+            border-color: rgba(245, 158, 11, 0.4);
+        }
+
+        .proxy-input-row input::placeholder {
+            color: #555;
+        }
+
+        .proxy-status {
+            font-size: 11px;
+            margin-top: 8px;
+            color: #777;
+        }
+
+        .proxy-status.active {
+            color: #f59e0b;
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            .container { padding: 16px 12px; }
+            .header h1 { font-size: 22px; }
+            .input-group { flex-direction: column; }
+            .tabs { flex-direction: column; }
+            .status-items { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🎬 HLS Video Player</h1>
+            <p>Hỗ trợ M3U8 URL, Blob M3U8 từ manifest JSON (fake extensions)</p>
+        </div>
+
+        <!-- Video Player -->
+        <div class="player-wrapper">
+            <video id="video-player" controls crossorigin="anonymous"></video>
+            <div class="player-placeholder" id="placeholder">
+                <div class="icon">
+                    <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                </div>
+                <span>Nhập URL hoặc manifest để bắt đầu phát</span>
+            </div>
+        </div>
+
+        <!-- CORS Proxy Config -->
+        <div class="proxy-section">
+            <div class="proxy-header">
+                <h3>🔀 CORS Proxy</h3>
+                <label class="proxy-toggle">
+                    <input type="checkbox" id="proxy-enabled" onchange="toggleProxy()">
+                    <span class="proxy-slider"></span>
+                </label>
+            </div>
+            <div class="proxy-input-row">
+                <input type="text" id="proxy-url" placeholder="https://your-worker.workers.dev">
+            </div>
+            <script>
+                // Auto-detect proxy URL: dùng cùng hostname với trang hiện tại
+                // Nếu truy cập từ 192.168.0.50:3000 → proxy = http://192.168.0.50:8787
+                // Nếu truy cập từ localhost:3000 → proxy = http://localhost:8787
+                (function() {
+                    const host = location.hostname; // 'localhost' hoặc '192.168.0.50'
+                    const proxyPort = 8787;
+                    const proxyUrl = `${location.protocol}//${host}:${proxyPort}`;
+                    document.getElementById('proxy-url').value = proxyUrl;
+                })();
+            </script>
+            <div class="proxy-status" id="proxy-status">⚪ Proxy tắt — segment requests gửi trực tiếp tới server gốc</div>
+        </div>
+
+        <!-- Controls -->
+        <div class="controls-panel">
+            <div class="tabs">
+                <button class="tab-btn active" onclick="switchTab('tab-url')">📎 M3U8 URL</button>
+                <button class="tab-btn" onclick="switchTab('tab-manifest')">📦 Manifest JSON</button>
+                <button class="tab-btn" onclick="switchTab('tab-custom')">✏️ Custom M3U8</button>
+            </div>
+
+            <!-- Tab 1: Direct M3U8 URL -->
+            <div class="tab-content active" id="tab-url">
+                <div class="input-group">
+                    <input type="text" id="m3u8-url" placeholder="https://example.com/video/index.m3u8">
+                    <button class="btn btn-primary" onclick="playFromUrl()">▶ Phát</button>
+                </div>
+                <p class="hint">Nhập trực tiếp URL m3u8. HLS.js sẽ tải và phát video.</p>
+                <div class="examples">
+                    <button class="example-btn" onclick="loadExample('bbb')">Big Buck Bunny</button>
+                    <button class="example-btn" onclick="loadExample('tears')">Tears of Steel</button>
+                </div>
+            </div>
+
+            <!-- Tab 2: Manifest JSON (like phimmoichill) -->
+            <div class="tab-content" id="tab-manifest">
+                <div class="input-group">
+                    <textarea id="manifest-json" placeholder='{
+  "2048p": {
+    "targetDuration": 7,
+    "segments": [
+      { "du": "4", "link": "https://sochim.xyz/abc123.dat" },
+      { "du": "3.5", "link": "https://sochim.xyz/def456.woff2" }
+    ]
+  }
+}'></textarea>
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <button class="btn btn-primary" onclick="playFromManifest()">▶ Tạo M3U8 & Phát</button>
+                    <button class="btn btn-secondary" onclick="previewM3u8()">👁 Xem M3U8</button>
+                </div>
+                <p class="hint">
+                    Paste manifest JSON (dạng phimmoichill). Script sẽ convert thành m3u8 → tạo Blob URL → phát video.<br>
+                    Segments có thể dùng bất kỳ extension nào (<code>.dat</code> <code>.woff2</code> <code>.css</code>...) — HLS.js chỉ đọc binary.
+                </p>
+            </div>
+
+            <!-- Tab 3: Custom M3U8 content -->
+            <div class="tab-content" id="tab-custom">
+                <div class="input-group">
+                    <textarea id="custom-m3u8" placeholder="#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:7
+#EXT-X-MEDIA-SEQUENCE:0
+#EXTINF:4,
+https://sochim.xyz/segment1.dat
+#EXTINF:3.5,
+https://sochim.xyz/segment2.woff2
+#EXT-X-ENDLIST"></textarea>
+                </div>
+                <button class="btn btn-primary" onclick="playFromCustomM3u8()">▶ Tạo Blob & Phát</button>
+                <p class="hint">
+                    Viết/paste nội dung m3u8 trực tiếp. Script sẽ tạo Blob URL và truyền cho HLS.js.<br>
+                    Đây là cách phimmoichill tạo playlist client-side với file extension giả.
+                </p>
+            </div>
+        </div>
+
+        <!-- Status -->
+        <div class="status-bar">
+            <h3>Trạng thái</h3>
+            <div class="status-items">
+                <div class="status-item">
+                    <div class="status-dot" id="dot-hls"></div>
+                    <span class="status-label">HLS.js:</span>
+                    <span class="status-value" id="val-hls">Chờ khởi tạo</span>
+                </div>
+                <div class="status-item">
+                    <div class="status-dot" id="dot-video"></div>
+                    <span class="status-label">Video:</span>
+                    <span class="status-value" id="val-video">—</span>
+                </div>
+                <div class="status-item">
+                    <div class="status-dot" id="dot-segments"></div>
+                    <span class="status-label">Segments:</span>
+                    <span class="status-value" id="val-segments">—</span>
+                </div>
+                <div class="status-item">
+                    <div class="status-dot" id="dot-quality"></div>
+                    <span class="status-label">Quality:</span>
+                    <span class="status-value" id="val-quality">—</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Log -->
+        <div class="log-panel">
+            <div class="log-header">
+                <h3>📋 Log</h3>
+                <button class="btn btn-secondary" onclick="clearLog()" style="padding:6px 12px; font-size:11px;">Xóa</button>
+            </div>
+            <div id="log-output"></div>
+        </div>
+    </div>
+
+    <!-- HLS.js -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    
+    <script>
+        // ============================================================
+        // GLOBAL STATE
+        // ============================================================
+        let hls = null;
+        const video = document.getElementById('video-player');
+        const placeholder = document.getElementById('placeholder');
+        let currentBlobUrl = null;
+
+        // ============================================================
+        // CORS PROXY
+        // ============================================================
+        function isProxyEnabled() {
+            return document.getElementById('proxy-enabled').checked;
+        }
+
+        function getProxyUrl() {
+            return document.getElementById('proxy-url').value.trim().replace(/\/$/, '');
+        }
+
+        function proxyWrap(url) {
+            if (!isProxyEnabled()) return url;
+            const proxyBase = getProxyUrl();
+            if (!proxyBase) return url;
+            return `${proxyBase}/?url=${encodeURIComponent(url)}`;
+        }
+
+        function toggleProxy() {
+            const enabled = isProxyEnabled();
+            const statusEl = document.getElementById('proxy-status');
+            if (enabled) {
+                statusEl.textContent = `🟡 Proxy BẬT — segments sẽ được gửi qua: ${getProxyUrl()}`;
+                statusEl.className = 'proxy-status active';
+                log('🔀 CORS Proxy đã bật: ' + getProxyUrl(), 'warn');
+            } else {
+                statusEl.textContent = '⚪ Proxy tắt — segment requests gửi trực tiếp tới server gốc';
+                statusEl.className = 'proxy-status';
+                log('🔀 CORS Proxy đã tắt', 'info');
+            }
+        }
+
+        // ============================================================
+        // LOGGING
+        // ============================================================
+        function log(msg, type = 'info') {
+            const logEl = document.getElementById('log-output');
+            const time = new Date().toLocaleTimeString('vi-VN');
+            const line = document.createElement('div');
+            line.className = `log-line ${type}`;
+            line.innerHTML = `<span class="time">[${time}]</span> ${msg}`;
+            logEl.appendChild(line);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log-output').innerHTML = '';
+        }
+
+        // ============================================================
+        // STATUS UPDATES
+        // ============================================================
+        function setStatus(id, state, value) {
+            const dot = document.getElementById(`dot-${id}`);
+            const val = document.getElementById(`val-${id}`);
+            dot.className = `status-dot ${state}`;
+            val.textContent = value;
+        }
+
+        // ============================================================
+        // TAB SWITCHING
+        // ============================================================
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        // ============================================================
+        // CORE: Initialize HLS.js and play a source
+        // ============================================================
+        function playSource(url, sourceLabel) {
+            // Cleanup previous
+            if (hls) {
+                hls.destroy();
+                hls = null;
+            }
+            if (currentBlobUrl) {
+                URL.revokeObjectURL(currentBlobUrl);
+                currentBlobUrl = null;
+            }
+
+            placeholder.classList.add('hidden');
+            log(`Đang tải: <code>${sourceLabel}</code>`, 'info');
+            setStatus('hls', 'loading', 'Đang tải...');
+            setStatus('video', '', '—');
+            setStatus('segments', '', '—');
+            setStatus('quality', '', '—');
+
+            if (Hls.isSupported()) {
+                const hlsConfig = {
+                    debug: false,
+                    enableWorker: true,
+                    lowLatencyMode: false,
+                };
+
+                // Nếu proxy bật, dùng custom loader để rewrite URLs qua proxy
+                if (isProxyEnabled() && getProxyUrl()) {
+                    // Tạo custom loader class kế thừa từ default loader
+                    const proxyBase = getProxyUrl();
+
+                    class ProxyLoader extends Hls.DefaultConfig.loader {
+                        constructor(config) {
+                            super(config);
+                            const originalLoad = this.load.bind(this);
+                            this.load = function(context, config, callbacks) {
+                                // Rewrite cross-origin URLs qua proxy
+                                if (context.url && context.url.startsWith('http') && !context.url.startsWith(location.origin)) {
+                                    const originalUrl = context.url;
+                                    context.url = `${proxyBase}/?url=${encodeURIComponent(originalUrl)}`;
+                                }
+                                originalLoad(context, config, callbacks);
+                            };
+                        }
+                    }
+
+                    hlsConfig.loader = ProxyLoader;
+                    log(`🔀 HLS.js sẽ proxy segments qua: ${proxyBase}`, 'warn');
+                }
+
+                hls = new Hls(hlsConfig);
+
+                // --- Events ---
+                hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
+                    log(`✅ Manifest parsed: ${data.levels.length} quality level(s)`, 'success');
+                    setStatus('hls', 'active', 'Sẵn sàng');
+                    
+                    const levels = data.levels.map(l => `${l.width}x${l.height}`).join(', ');
+                    setStatus('quality', 'active', levels || 'Auto');
+                    
+                    video.play().catch(() => {});
+                });
+
+                hls.on(Hls.Events.FRAG_LOADED, (event, data) => {
+                    const frag = data.frag;
+                    const url = frag.url || '';
+                    const ext = url.split('.').pop().split('?')[0];
+                    const size = data.payload ? (data.payload.byteLength / 1024).toFixed(1) : '?';
+                    log(`📦 Segment #${frag.sn} loaded — <code>.${ext}</code> — ${size} KB`, 'info');
+                    setStatus('segments', 'active', `#${frag.sn} (.${ext})`);
+                });
+
+                hls.on(Hls.Events.LEVEL_SWITCHED, (event, data) => {
+                    const level = hls.levels[data.level];
+                    if (level) {
+                        setStatus('quality', 'active', `${level.width}x${level.height}`);
+                    }
+                });
+
+                hls.on(Hls.Events.ERROR, (event, data) => {
+                    log(`❌ Error: ${data.type} — ${data.details}`, 'error');
+                    setStatus('hls', 'error', data.details);
+                    
+                    if (data.fatal) {
+                        switch (data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                log('🔄 Thử tải lại...', 'warn');
+                                hls.startLoad();
+                                break;
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                log('🔄 Thử recover media...', 'warn');
+                                hls.recoverMediaError();
+                                break;
+                            default:
+                                log('💀 Lỗi không thể khắc phục.', 'error');
+                                hls.destroy();
+                                break;
+                        }
+                    }
+                });
+
+                hls.loadSource(url);
+                hls.attachMedia(video);
+
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                // Safari native HLS
+                video.src = url;
+                video.addEventListener('loadedmetadata', () => {
+                    log('✅ Safari native HLS loaded', 'success');
+                    setStatus('hls', 'active', 'Native HLS');
+                    video.play().catch(() => {});
+                });
+            } else {
+                log('❌ Trình duyệt không hỗ trợ HLS!', 'error');
+                setStatus('hls', 'error', 'Không hỗ trợ');
+            }
+
+            // Video events
+            video.onplaying = () => setStatus('video', 'active', 'Đang phát');
+            video.onpause = () => setStatus('video', '', 'Tạm dừng');
+            video.onwaiting = () => setStatus('video', 'loading', 'Đang buffer...');
+            video.onerror = () => setStatus('video', 'error', 'Lỗi');
+        }
+
+        // ============================================================
+        // MODE 1: Play from direct M3U8 URL
+        // ============================================================
+        function playFromUrl() {
+            const url = document.getElementById('m3u8-url').value.trim();
+            if (!url) {
+                log('⚠️ Vui lòng nhập URL m3u8', 'warn');
+                return;
+            }
+            playSource(url, url.length > 60 ? url.substring(0, 60) + '...' : url);
+        }
+
+        // ============================================================
+        // MODE 2: Play from Manifest JSON (phimmoichill style)
+        //
+        // Đây là cách phimmoichill hoạt động:
+        // 1. Nhận manifest JSON chứa segments với fake extensions
+        // 2. Convert thành nội dung m3u8 text
+        // 3. Tạo Blob URL từ m3u8 text
+        // 4. Truyền Blob URL cho HLS.js
+        // 
+        // HLS.js không quan tâm extension vì nó fetch dưới dạng
+        // ArrayBuffer và parse binary (tìm MPEG-TS sync byte 0x47)
+        // ============================================================
+        function generateM3u8FromManifest(manifest) {
+            // Tìm quality cao nhất có trong manifest
+            const qualities = ['2048p', '1080p', '720p', '480p', '360p'];
+            let selectedQuality = null;
+            
+            for (const q of qualities) {
+                if (manifest[q]) {
+                    selectedQuality = manifest[q];
+                    log(`🎯 Chọn quality: ${q}`, 'info');
+                    break;
+                }
+            }
+
+            if (!selectedQuality || !selectedQuality.segments) {
+                throw new Error('Không tìm thấy segments trong manifest');
+            }
+
+            const targetDuration = selectedQuality.targetDuration || 10;
+            const segments = selectedQuality.segments;
+
+            // Tạo nội dung m3u8
+            let m3u8 = '#EXTM3U\n';
+            m3u8 += '#EXT-X-VERSION:3\n';
+            m3u8 += `#EXT-X-TARGETDURATION:${targetDuration}\n`;
+            m3u8 += '#EXT-X-MEDIA-SEQUENCE:0\n';
+
+            for (const seg of segments) {
+                m3u8 += `#EXTINF:${seg.du},\n`;
+                m3u8 += `${seg.link}\n`;
+            }
+
+            m3u8 += '#EXT-X-ENDLIST\n';
+
+            log(`📊 Tổng cộng: ${segments.length} segments, targetDuration=${targetDuration}s`, 'info');
+
+            // Tính tổng thời lượng
+            const totalDuration = segments.reduce((sum, s) => sum + parseFloat(s.du || 0), 0);
+            log(`⏱️ Thời lượng ước tính: ${Math.floor(totalDuration / 60)} phút ${Math.floor(totalDuration % 60)} giây`, 'info');
+
+            return m3u8;
+        }
+
+        function createBlobUrl(m3u8Content) {
+            const blob = new Blob([m3u8Content], { type: 'application/x-mpegURL' });
+            const url = URL.createObjectURL(blob);
+            currentBlobUrl = url;
+            log(`🔗 Blob URL tạo thành công: <code>${url.substring(0, 50)}...</code>`, 'success');
+            return url;
+        }
+
+        function playFromManifest() {
+            const jsonText = document.getElementById('manifest-json').value.trim();
+            if (!jsonText) {
+                log('⚠️ Vui lòng paste manifest JSON', 'warn');
+                return;
+            }
+
+            try {
+                const manifest = JSON.parse(jsonText);
+                log('📥 Manifest JSON parsed thành công', 'success');
+
+                const m3u8Content = generateM3u8FromManifest(manifest);
+                const blobUrl = createBlobUrl(m3u8Content);
+
+                playSource(blobUrl, 'Blob URL (từ manifest)');
+
+            } catch (e) {
+                log(`❌ Lỗi: ${e.message}`, 'error');
+            }
+        }
+
+        function previewM3u8() {
+            const jsonText = document.getElementById('manifest-json').value.trim();
+            if (!jsonText) return;
+
+            try {
+                const manifest = JSON.parse(jsonText);
+                const m3u8Content = generateM3u8FromManifest(manifest);
+                
+                // Show in custom tab
+                document.getElementById('custom-m3u8').value = m3u8Content;
+                // Switch to custom tab
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                document.getElementById('tab-custom').classList.add('active');
+                document.querySelectorAll('.tab-btn')[2].classList.add('active');
+                
+                log('👁 Preview m3u8 content — xem tab "Custom M3U8"', 'info');
+            } catch (e) {
+                log(`❌ Lỗi: ${e.message}`, 'error');
+            }
+        }
+
+        // ============================================================
+        // MODE 3: Play from custom M3U8 text
+        // ============================================================
+        function playFromCustomM3u8() {
+            const m3u8Text = document.getElementById('custom-m3u8').value.trim();
+            if (!m3u8Text) {
+                log('⚠️ Vui lòng nhập nội dung m3u8', 'warn');
+                return;
+            }
+
+            if (!m3u8Text.startsWith('#EXTM3U')) {
+                log('⚠️ Nội dung m3u8 phải bắt đầu bằng #EXTM3U', 'warn');
+                return;
+            }
+
+            const blobUrl = createBlobUrl(m3u8Text);
+            playSource(blobUrl, 'Blob URL (custom m3u8)');
+        }
+
+        // ============================================================
+        // EXAMPLES
+        // ============================================================
+        function loadExample(name) {
+            const examples = {
+                bbb: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
+                tears: 'https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8',
+            };
+            
+            const url = examples[name];
+            if (url) {
+                document.getElementById('m3u8-url').value = url;
+                log(`📌 Loaded example: ${name}`, 'info');
+            }
+        }
+
+        // ============================================================
+        // INIT
+        // ============================================================
+        window.addEventListener('DOMContentLoaded', () => {
+            if (Hls.isSupported()) {
+                log('✅ HLS.js v' + Hls.version + ' — Sẵn sàng', 'success');
+                setStatus('hls', 'active', 'v' + Hls.version);
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                log('✅ Safari native HLS — Sẵn sàng', 'success');
+                setStatus('hls', 'active', 'Native');
+            } else {
+                log('❌ Trình duyệt không hỗ trợ HLS', 'error');
+                setStatus('hls', 'error', 'Không hỗ trợ');
+            }
+        });
+    </script>
+</body>
+</html>
