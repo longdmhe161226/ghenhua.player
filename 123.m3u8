@@ -1,0 +1,9 @@
+#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:7
+#EXT-X-MEDIA-SEQUENCE:0
+#EXTINF:4,
+https://github.com/longdmhe161226/ghenhua.player/releases/download/untagged-e3a334b8f43ce6fc9696/003b37f48beb2ad4ff67bd5218ed1b1c.js
+#EXTINF:3.5,
+https://github.com/longdmhe161226/ghenhua.player/releases/download/untagged-e3a334b8f43ce6fc9696/001b4b0ef5c55c5c87a95be246a656ed.js
+#EXT-X-ENDLIST
